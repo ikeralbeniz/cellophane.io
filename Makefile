@@ -13,7 +13,7 @@ $(TARGET): $(OBJECTS)
 	$(CC) $(CFLAGS) -o $(TARGET) $(OBJECTS)
 
 install:
-	cp include/cellophane_io.h /urs/include/
+	cp include/cellophane_io.h /usr/include/
 	cp $(TARGET) /usr/lib/
 
 clean:
