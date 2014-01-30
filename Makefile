@@ -13,8 +13,9 @@ $(TARGET): $(OBJECTS)
 	$(CC) $(CFLAGS) -o $(TARGET) $(OBJECTS)
 
 install:
-	cp include/cellophane_io.h /usr/include/
+	cp include/ /usr/include/cellophaneio/ -R
 	cp $(TARGET) /usr/lib/
+	ln -s -i /usr/lib/$(TARGET) /usr/lib/libcellophane.so
 
 clean:
 	rm -rf *.so
