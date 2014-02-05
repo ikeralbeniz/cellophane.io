@@ -18,7 +18,7 @@ int main()
     WsHandler io_client;
     cellophane_io(&io_client,"http://", "localhost", 8000);
     cellophane_emit(&io_client,"login", "foo","");
-    cellophane_on(&io_client,"notofication", on_notofication_callback);
+    cellophane_on(&io_client, on_notofication_callback);
     cellophane_keepAlive(&io_client);
     cellophane_close(&io_client);
     return 0;

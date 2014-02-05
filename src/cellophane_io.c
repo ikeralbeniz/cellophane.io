@@ -29,12 +29,16 @@
 #include <curl/curl.h>
 #include <curl/easy.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "cellophane_io.h"
 #include "md5.h"
 
 /* function prototypes to define later */
+int Base64encode_len(int len);
+int Base64encode(char *encoded, const char *string, int len);
 int cellophane_read_ready(WsHandler * ws_handler);
+void cellophane_reconect(WsHandler * ws_handler);
 void cellophane_compute_md5(char *str, unsigned char digest[16]);
 int cellophane_find_on_char_array(char ** tokens , char * key);
 char** cellophane_str_split(char* a_str, const char a_delim);
@@ -301,7 +305,7 @@ char * cellophane_read(WsHandler * ws_handler) {
                 //payload_len = $payload_len[1];
                 break;
             case 127:
-                perror("Next 8 bytes are 64bit uint payload length, not yet implemented, since PHP can't handle 64bit longs!");
+                //perror("Next 8 bytes are 64bit uint payload length, not yet implemented, since PHP can't handle 64bit longs!");
                 break;
         }
 
@@ -351,28 +355,27 @@ void  cellophane_emit(WsHandler * ws_handler, char * event, char * args, char * 
         cellophane_send(ws_handler,TYPE_EVENT, "", endpoint, message);
 }
 
-void cellophane_on(WsHandler * ws_handler, char * event, void (*on_event_callback)(char *))
+void cellophane_on(WsHandler * ws_handler, void (*on_event_callback)(char *))
 {
-    int i = 0;
-    for(i = 0; i < 128; i++){
-        if(strcmp( ws_handler->events[i].event_name ,"notification") == 0){
-            ws_handler->events[i].event_name = malloc(strlen(event));
-            memcpy( ws_handler->events[i].event_name,event,strlen(event));
-            ws_handler->events[i].callback_func = on_event_callback;
-
-        }
-    }
+    ws_handler->events[4].event_name = "default";
+    ws_handler->events[4].callback_func = on_event_callback;
 }
 
 void cellophane_event_handler(WsHandler * ws_handler){
 
     char * data = cellophane_read(ws_handler);
     if(strlen(data) == 0){
-        ws_handler->fd_alive = 0;
-        exit(1);
+        cellophane_reconect(ws_handler);
+        if(ws_handler->fd_alive){
+            exit(1);
+        }
     }
 
     printf("Received> %s\n",data);
+
+    if( strncmp(ws_handler->events[4].event_name,"default",7) == 0){
+        ws_handler->events[4].callback_func(data);
+    }
 
     /*int i = 0;
     for(i = 0; i < 128; i++){
@@ -392,6 +395,15 @@ void  cellophane_close(WsHandler * ws_handler)
 {
         cellophane_send(ws_handler, TYPE_DISCONNECT, "", "","");
         close(ws_handler->fd);
+}
+
+
+void cellophane_reconect(WsHandler * ws_handler){
+
+    printf("Reconecting....\n");
+    cellophane_close(ws_handler);
+    cellophane_connect(ws_handler);
+
 }
 
 void cellophane_keepAlive(WsHandler * ws_handler) {
@@ -480,9 +492,12 @@ char * cellophane_do_web_request(WsHandler * ws_handler)
     curl_handle = curl_easy_init();
 
     curl_easy_setopt(curl_handle, CURLOPT_URL, ws_handler->socketIOUrl );
+    curl_easy_setopt(curl_handle, CURLOPT_FOLLOWLOCATION, 1);
 
-     if (!ws_handler->checkSslPeer)
+     if (!ws_handler->checkSslPeer){
         curl_easy_setopt(curl_handle, CURLOPT_SSL_VERIFYPEER, 0);
+        curl_easy_setopt(curl_handle, CURLOPT_SSL_VERIFYHOST, 0);
+    }
 
     if (ws_handler->handshakeTimeout != NULL) {
         curl_easy_setopt(curl_handle, CURLOPT_CONNECTTIMEOUT_MS, ws_handler->handshakeTimeout);

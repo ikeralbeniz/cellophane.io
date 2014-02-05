@@ -26,6 +26,17 @@
 #include "payload.h"
 
 
+#define BYTETOBINARYPATTERN "%d%d%d%d%d%d%d%d"
+#define BYTETOBINARY(byte)  \
+  (byte & 0x80 ? 1 : 0), \
+  (byte & 0x40 ? 1 : 0), \
+  (byte & 0x20 ? 1 : 0), \
+  (byte & 0x10 ? 1 : 0), \
+  (byte & 0x08 ? 1 : 0), \
+  (byte & 0x04 ? 1 : 0), \
+  (byte & 0x02 ? 1 : 0), \
+  (byte & 0x01 ? 1 : 0)
+
 void payload_init(Payload * payload){
 
     payload->fin = 0x1;
@@ -151,15 +162,39 @@ unsigned char * payload_encodePayload(Payload * payload)
         i_payload = ((i_payload) << 1) | (payload_getMask(payload));
 
 
+        int aux_unit_len = 0;
+        char auxpayload[4086];
+
         if (payload_getLength(payload) <= 125) {
+
             i_payload = ((i_payload) << 7) | (payload_getLength(payload));
-            o_payload = ((i_payload >> 8) & 0x00FF);
-            i_payload = i_payload & 0x00FF;
+
+            char aux_unit_125[2];
+            aux_unit_125[0] = (char)((i_payload >> 8) & 0x00FF);;
+            aux_unit_125[1] = (char)i_payload & 0x00FF;;
+
+            memcpy(auxpayload, aux_unit_125, 2);
+            aux_unit_len = 2;
+
         } else if (payload_getLength(payload) <= 0xffff) {
-            i_payload = ((i_payload) << 7) | 126;
-            o_payload = 0;
+            i_payload = ((i_payload) << 7);
+
+            char aux_unit_127[4];
+
+            aux_unit_127[0] = (char)((i_payload >> 8) & 0x00FF);
+            aux_unit_127[1] = (char) 0x00FE;
+
+            int l_payload = payload_getLength(payload);
+
+            aux_unit_127[2] = (char)((l_payload >> 8) & 0x00FF);
+            aux_unit_127[3] = (char)l_payload & 0x00FF;
+
+            memcpy(auxpayload, aux_unit_127, 4);
+            aux_unit_len = 4;
+
            // i_payload = pack('n', i_payload).pack('n*', payload_getLength(payload));
         } else {
+            printf("--> Super Extended Payload\n");
             i_payload = ((i_payload) << 7) | 127;
             o_payload = 0;
             /*$left = 0xffffffff00000000;
@@ -167,29 +202,27 @@ unsigned char * payload_encodePayload(Payload * payload)
             $l = (payload->getLength() & $left) >> 32;
             $r = payload->getLength() & $right;
             i_payload = pack('n', i_payload).pack('NN', $l, $r);*/
+            aux_unit_len = 8;
         }
 
         char * data = malloc(payload_getLength(payload));
         bzero(data,strlen(data));
 
-        char auxpayload[4086];
+
         int size = 0;
-        char aux_unit[2];
-        aux_unit[0] = (char)o_payload;
-        aux_unit[1] = (char)i_payload;
+
 
         if (payload_getMask(payload) == 0x1) {
             payload_maskData(payload, data);
-            memcpy(auxpayload, aux_unit, 2);
-            memcpy(&auxpayload[2], payload_getMaskKey(payload), 4);
-            memcpy(&auxpayload[6], data, strlen(data));
-            size = 6 + strlen(data);
+            memcpy(&auxpayload[aux_unit_len], payload_getMaskKey(payload), 4);
+            memcpy(&auxpayload[aux_unit_len+4], data, strlen(data));
+            size = aux_unit_len + 4 + strlen(data);
 
         } else {
             //data = payload_getPayload(payload);
-            memcpy(auxpayload, aux_unit, 2);
-            memcpy(&auxpayload[2], (const char * )payload->payload, strlen((const char * )payload->payload));
-            size = 2 + strlen((const char * )payload->payload);
+            //memcpy(auxpayload, aux_unit, 2);
+            memcpy(&auxpayload[aux_unit_len], (const char * )payload->payload, strlen((const char * )payload->payload));
+            size = aux_unit_len + strlen((const char * )payload->payload);
         }
 
 

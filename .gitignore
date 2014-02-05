@@ -16,3 +16,14 @@
 *.exe
 *.out
 *.app
+
+
+#codeBlocs
+/bin
+/obj
+main.c
+main.cpp
+*.cbp
+*.layout
+*.depend
+

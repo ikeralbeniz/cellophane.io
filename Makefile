@@ -1,6 +1,6 @@
 SHELL = /bin/sh
-CC    = gcc
-CFLAGS  = -fPIC -shared -Wall -Iinclude -Isrc -lcurl
+CC    = g++
+CFLAGS  = -fpermissive -fPIC -shared -Wall -Iinclude -Isrc -lcurl
 
 TARGET  = cellophane.io.so
 SOURCES = $(shell echo src/*.c)

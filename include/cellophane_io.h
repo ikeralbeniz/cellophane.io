@@ -62,24 +62,25 @@ typedef struct _wshandler{
     int handshakeTimeout;
     time_t heartbeatStamp;
 
-    WsEvent events[128];
+    WsEvent events[5];
 
 } wshandler_type;
 
 typedef wshandler_type WsHandler;
 
-void cellophane_new(WsHandler * ws_handler, char * tcp_protocol , char * address, int port, char * path, int protocol, int read, int  checkSslPeer, int debug);
-void cellophane_io(WsHandler * ws_handler, char * tcp_protocol, char * address, int port );
-void cellophane_init(WsHandler * ws_handler, int keepalive);
-int cellophane_handshake(WsHandler * ws_handler);
-int cellophane_connect(WsHandler * ws_handler);
-char * cellophane_generateKey(int length);
-char * cellophane_read(WsHandler * ws_handler);
-void cellophane_send(WsHandler * ws_handler, enum socket_io_type io_type, char * id, char * endpoint, char * message);
-void  cellophane_emit(WsHandler * ws_handler, char * event, char * args, char * endpoint);
-void  cellophane_close(WsHandler * ws_handler);
-void cellophane_keepAlive(WsHandler * ws_handler);
-void cellophane_event_handler(WsHandler * ws_handler);
+extern void cellophane_new(WsHandler * ws_handler, char * tcp_protocol , char * address, int port, char * path, int protocol, int read, int  checkSslPeer, int debug);
+extern void cellophane_io(WsHandler * ws_handler, char * tcp_protocol, char * address, int port );
+extern void cellophane_init(WsHandler * ws_handler, int keepalive);
+extern int cellophane_handshake(WsHandler * ws_handler);
+extern int cellophane_connect(WsHandler * ws_handler);
+extern char * cellophane_generateKey(int length);
+extern char * cellophane_read(WsHandler * ws_handler);
+extern void cellophane_send(WsHandler * ws_handler, enum socket_io_type io_type, char * id, char * endpoint, char * message);
+extern void  cellophane_emit(WsHandler * ws_handler, char * event, char * args, char * endpoint);
+extern void  cellophane_close(WsHandler * ws_handler);
+extern void cellophane_keepAlive(WsHandler * ws_handler);
+extern void cellophane_event_handler(WsHandler * ws_handler);
+extern void cellophane_on(WsHandler * ws_handler, void (*on_event_callback)(char *));
 
 
 #endif //_CELLOPHANE_IO_H_
