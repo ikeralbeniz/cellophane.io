@@ -54,7 +54,7 @@ typedef struct _wshandler{
     WsSession session;
     int fd;
     int fd_alive;
-    char buffer[256];
+    char * buffer;
     int lastId;
     int read;
     int checkSslPeer;
@@ -74,7 +74,7 @@ extern void cellophane_init(WsHandler * ws_handler, int keepalive);
 extern int cellophane_handshake(WsHandler * ws_handler);
 extern int cellophane_connect(WsHandler * ws_handler);
 extern char * cellophane_generateKey(int length);
-extern char * cellophane_read(WsHandler * ws_handler);
+extern char ** cellophane_read(WsHandler * ws_handler, int * msg_number);
 extern void cellophane_send(WsHandler * ws_handler, enum socket_io_type io_type, char * id, char * endpoint, char * message);
 extern void  cellophane_emit(WsHandler * ws_handler, char * event, char * args, char * endpoint);
 extern void  cellophane_close(WsHandler * ws_handler);

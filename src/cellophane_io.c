@@ -40,6 +40,7 @@ int Base64encode(char *encoded, const char *string, int len);
 int cellophane_read_ready(WsHandler * ws_handler);
 void cellophane_reconect(WsHandler * ws_handler);
 void cellophane_compute_md5(char *str, unsigned char digest[16]);
+int cellophane_number_of_message(char * buffer, int n);
 int cellophane_find_on_char_array(char ** tokens , char * key);
 char** cellophane_str_split(char* a_str, const char a_delim);
 char * cellophane_do_web_request(WsHandler * ws_handler);
@@ -143,6 +144,7 @@ int cellophane_connect(WsHandler * ws_handler) {
     int portno, n;
     struct sockaddr_in serv_addr;
     struct hostent *server;
+    char buff[256];
 
 
     portno = ws_handler->serverPort;
@@ -191,6 +193,7 @@ int cellophane_connect(WsHandler * ws_handler) {
         key);
 
     n = send(ws_handler->fd,out,out_len, 0);
+    //printf("sending data line 196\n");
     if (n < 0)
     {
          perror("ERROR writing to socket");
@@ -198,14 +201,19 @@ int cellophane_connect(WsHandler * ws_handler) {
          exit(1);
     }
 
-    bzero(ws_handler->buffer,256);
-    n = recv(ws_handler->fd,ws_handler->buffer,255, 0);
+    bzero(buff,256);
+    n = recv(ws_handler->fd,buff,255, 0);
     if (n < 0)
     {
          perror("ERROR reading from socket");
          ws_handler->fd_alive = 0;
          exit(1);
     }
+
+    ws_handler->buffer = realloc(NULL, strlen(buff));
+    strcpy(ws_handler->buffer, buff);
+
+
 
     if(strncmp (ws_handler->buffer,"HTTP/1.1 101",12) != 0){
         perror("Unexpected Response. Expected HTTP/1.1 101..\nAborting...");
@@ -214,6 +222,7 @@ int cellophane_connect(WsHandler * ws_handler) {
     }
 
     char * m_payload;
+    char ** m_payload_a;
 
     if(strstr(ws_handler->buffer,"1::") == NULL){
 
@@ -222,7 +231,18 @@ int cellophane_connect(WsHandler * ws_handler) {
 
         }
 
-        m_payload = cellophane_read(ws_handler);
+        int msg_number = 0;
+        m_payload_a = cellophane_read(ws_handler,&msg_number);
+        m_payload = *(m_payload_a);
+        //m_payload_a--;
+
+        /* const char** ptr = mpg123_decoders();
+        int count = 0;
+        while (*(ptr++) != NULL){ ++count; }
+            --ptr;
+        while (count-- > 0){
+        syslog(LOG_DEBUG, "\t%s",*(--ptr));
+        }*/
 
     }else{
 
@@ -240,6 +260,9 @@ int cellophane_connect(WsHandler * ws_handler) {
 
 
     ws_handler->heartbeatStamp = time(NULL);
+
+    //free(m_payload_a);
+    //free(m_payload);
 
 }
 
@@ -269,49 +292,107 @@ char * cellophane_generateKey(int length) {
 
 }
 
-char * cellophane_read(WsHandler * ws_handler) {
+char ** cellophane_read(WsHandler * ws_handler, int * message_num) {
 
         int n;
         int totalread = 0;
         char * m_payload;
-        char * stream_buffer;
+        char buff[256];
 
 
-        bzero(ws_handler->buffer,256);
-        n = recv(ws_handler->fd,ws_handler->buffer,1, 0);
+        bzero(buff,256);
+        n = recv(ws_handler->fd,buff,1, 0);
         if (n < 0)
         {
              perror("ERROR reading from socket");
              exit(1);
         }
 
-        bzero(ws_handler->buffer,256);
-        n = recv(ws_handler->fd,ws_handler->buffer,255, 0);
+        bzero(buff,256);
+        n = recv(ws_handler->fd,buff,255, 0);
         if (n < 0)
         {
              perror("ERROR reading from socket");
              exit(1);
         }
 
+        ws_handler->buffer = realloc(NULL, strlen(buff));
+        strcpy(ws_handler->buffer, buff);
+
+
+        int num_messages = cellophane_number_of_message(buff,n);
+
+        while(num_messages < 0){
+            //printf("\n\nNot enougth data..\n\n");
+            n = n + recv(ws_handler->fd,buff,255, 0);
+            if (n < 0)
+            {
+             perror("ERROR reading from socket");
+             break;
+            }
+            ws_handler->buffer = (char*)realloc(ws_handler->buffer,(strlen(ws_handler->buffer) + strlen(buff)));
+            strcat(ws_handler->buffer, buff);
+            num_messages = cellophane_number_of_message(ws_handler->buffer,n);
+        }
+
+
+        char ** stream_buffer = malloc(sizeof(char*) * num_messages);
+
+        int msg_number = 0;
+
+        if (stream_buffer)
+        {
+
+            int buffer_pointer = 0;
+            size_t idx  = 0;
+
+            while(buffer_pointer < n){
+
+                int payload_len = (int)(ws_handler->buffer[buffer_pointer]);
+                buffer_pointer++;
+                switch (payload_len) {
+                    case 126:
+                        {
+                            char aux_len [2];
+                            strncpy(aux_len, ws_handler->buffer+buffer_pointer,2);
+                            payload_len = (((int)aux_len[0] & 0x00FF) << 8) | (aux_len[1]  & 0x00FF);
+                            buffer_pointer = buffer_pointer + 2;
+                            break;
+                        }
+                    case 127:
+                        //perror("Next 8 bytes are 64bit uint payload length, not yet implemented, since PHP can't handle 64bit longs!");
+                        break;
+                }
+
+                if((n-buffer_pointer)< payload_len){
+
+                    printf("Not enougth data..\n");
+                }
+
+                //printf("Payload len: %d - %d\n",payload_len,n);
+
+                char* message = malloc(payload_len+1);
+                bzero(message ,payload_len);
+                strncpy(message , ws_handler->buffer+buffer_pointer,payload_len);
+                message[payload_len] = '\0';
+                //sprintf(stream_buffer,"%s",ws_handler->buffer+1);
+                buffer_pointer = buffer_pointer + payload_len +1;
+
+                //printf("Stream buffer: %s\n",message);
+                assert(idx < num_messages);
+                *(stream_buffer + idx++) = strdup(message);
+
+                msg_number++;
+            }
+            assert(idx == (num_messages));
+            *(stream_buffer + idx) = 0;
+        }
 
 
         // There is also masking bit, as MSB, but it's 0 in current Socket.io
-        int payload_len = (int)(ws_handler->buffer[0]);
-        //printf("Payload len: %d (%s) %d",payload_len,ws_handler->buffer,n);
 
-        switch (payload_len) {
-            case 126:
-                //payload_len = unpack("n", fread($this->fd, 2));
-                //payload_len = $payload_len[1];
-                break;
-            case 127:
-                //perror("Next 8 bytes are 64bit uint payload length, not yet implemented, since PHP can't handle 64bit longs!");
-                break;
-        }
+        message_num = msg_number;
 
-        stream_buffer = malloc(payload_len);
-        bzero(stream_buffer,payload_len);
-        sprintf(stream_buffer,"%s",ws_handler->buffer+1);
         return stream_buffer;
 }
 
@@ -339,6 +420,7 @@ char * cellophane_read(WsHandler * ws_handler) {
 
 
         int n = send(ws_handler->fd,enc_payload, m_payload.enc_payload_size, 0);
+        //printf("sending data line 423\n");
         if (n < 0)
         {
             perror("ERROR writing to socket");
@@ -363,18 +445,29 @@ void cellophane_on(WsHandler * ws_handler, void (*on_event_callback)(char *))
 
 void cellophane_event_handler(WsHandler * ws_handler){
 
-    char * data = cellophane_read(ws_handler);
-    if(strlen(data) == 0){
+
+    char ** data = cellophane_read(ws_handler, NULL);
+
+    if (data)
+    {
+        int i;
+        for (i = 0; *(data + i); i++)
+        {
+            printf("Received> %s\n",*(data + i));
+
+            if( strncmp(ws_handler->events[4].event_name,"default",7) == 0){
+                ws_handler->events[4].callback_func(*(data + i));
+            }
+        }
+    }else{
+
         cellophane_reconect(ws_handler);
         if(ws_handler->fd_alive){
             exit(1);
         }
-    }
 
-    printf("Received> %s\n",data);
+        return;
 
-    if( strncmp(ws_handler->events[4].event_name,"default",7) == 0){
-        ws_handler->events[4].callback_func(data);
     }
 
     /*int i = 0;
@@ -394,6 +487,7 @@ void cellophane_event_handler(WsHandler * ws_handler){
 void  cellophane_close(WsHandler * ws_handler)
 {
         cellophane_send(ws_handler, TYPE_DISCONNECT, "", "","");
+        //printf("sending data line 489\n");
         close(ws_handler->fd);
 }
 
@@ -584,6 +678,40 @@ char** cellophane_str_split(char* a_str, const char a_delim)
     return result;
 }
 
+
+int cellophane_number_of_message(char * buffer, int n){
+
+        int msg_counter = 0;
+        int buffer_pointer = 0;
+
+        while(buffer_pointer < n){
+
+            int payload_len = (int)(buffer[buffer_pointer]);
+            buffer_pointer++;
+            switch (payload_len) {
+                case 126:
+                    {
+                        char aux_len [2];
+                        strncpy(aux_len, buffer+buffer_pointer,2);
+                        payload_len = (((int)aux_len[0] & 0x00FF) << 8) | (aux_len[1]  & 0x00FF);
+                        buffer_pointer = buffer_pointer + 2;
+                        break;
+                    }
+                case 127:
+                    //perror("Next 8 bytes are 64bit uint payload length, not yet implemented, since PHP can't handle 64bit longs!");
+                    break;
+            }
+
+            if((n-buffer_pointer)< payload_len){
+
+                return -1;
+            }
+
+            buffer_pointer = buffer_pointer + payload_len +1;
+            msg_counter++;
+        }
+        return msg_counter;
+}
 
 int cellophane_find_on_char_array(char ** tokens , char * key){
 
