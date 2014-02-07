@@ -22,6 +22,7 @@
 #include <sys/select.h>
 #include <stdio.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
@@ -34,6 +35,7 @@
 #include "cellophane_io.h"
 #include "md5.h"
 
+
 /* function prototypes to define later */
 int Base64encode_len(int len);
 int Base64encode(char *encoded, const char *string, int len);
@@ -45,6 +47,7 @@ int cellophane_find_on_char_array(char ** tokens , char * key);
 char** cellophane_str_split(char* a_str, const char a_delim);
 char * cellophane_do_web_request(WsHandler * ws_handler);
 size_t static cellophane_write_callback_func(void *buffer, size_t size, size_t nmemb, void *userp);
+
 
 int findn(int num)
 {
@@ -63,7 +66,7 @@ void cellophane_io(WsHandler * ws_handler, char * tcp_protocol, char * address, 
 
 }
 
-void cellophane_new(WsHandler * ws_handler, char * tcp_protocol , char * address, int port, char * path, int protocol, int read, int  checkSslPeer, int debug){
+void cellophane_new(WsHandler * ws_handler, char * tcp_protocol , char * address, int port, char * path, int protocol, int read, int  checkSslPeer, enum cellophane_debug_level debug){
 
     int url_size = (int)(strlen(tcp_protocol) + strlen(address) + strlen(path) + findn(port) + findn(protocol) ) + 3;
     ws_handler->socketIOUrl = malloc(url_size);
@@ -74,14 +77,68 @@ void cellophane_new(WsHandler * ws_handler, char * tcp_protocol , char * address
     ws_handler->serverPath = malloc(path_size);
     sprintf(ws_handler->serverPath,"/%s/%d",path, protocol);
     ws_handler->read = read;
-    ws_handler->debug =debug;
     ws_handler->checkSslPeer = checkSslPeer;
 
     ws_handler->lastId = 0;
     ws_handler->checkSslPeer = 1;
     ws_handler->handshakeTimeout = NULL;
+    if(ws_handler->debug_level == NULL){
+        ws_handler->debug_level = debug;
+    }
 
 }
+
+void cellophane_set_debug(WsHandler * ws_handler, enum cellophane_debug_level debug){
+    ws_handler->debug_level = debug;
+}
+
+void cellophane_print_log(WsHandler * ws_handler, enum cellophane_log_type logtype, enum cellophane_debug_level level,  char * format ,...){
+
+    va_list args;
+    va_start(args, format);
+    char * colored_format = (char *) malloc(52+strlen(format));
+    bzero(colored_format,16+strlen(format));
+
+    time_t timer;
+    char buffer[20];
+    struct tm* tm_info;
+
+    time(&timer);
+    tm_info = localtime(&timer);
+    strftime(buffer, 25, "%Y-%m-%d %H:%M:%S", tm_info);
+
+    if(ws_handler->debug_level >= level){
+
+        switch(logtype){
+            case LOG_ERROR:{
+                    sprintf(colored_format,"%s%s  [ERR]  %s%s\n",ERRCOL,buffer,format,CLRCOL);
+                    vfprintf(stderr,colored_format, args);
+                    break;
+                }
+            case LOG_WARNING:{
+                    sprintf(colored_format,"%s%s  [WAR]  %s%s\n",WARCOL,buffer,format,CLRCOL);
+                    vfprintf(stderr,colored_format, args);
+                    break;
+                }
+            case LOG_FREE:{
+                    sprintf(colored_format,"%s%s%s",FRECOL,format,CLRCOL);
+                    vfprintf(stderr,colored_format, args);
+                    //printf(WARCOL format, ctime(&now) ,__VA_ARGS__);
+                    break;
+                }
+            default:{
+                    sprintf(colored_format,"%s%s  [INF]  %s%s\n",INFCOL,buffer,format,CLRCOL);
+                    vfprintf(stderr,colored_format, args);
+                    break;
+                }
+        }
+
+    }
+
+    va_end(args);
+
+}
+
 
 void cellophane_init(WsHandler * ws_handler, int keepalive){
 
@@ -152,7 +209,7 @@ int cellophane_connect(WsHandler * ws_handler) {
     ws_handler->fd = socket(AF_INET, SOCK_STREAM, 0);
     if (ws_handler->fd < 0)
     {
-        perror("ERROR opening socket");
+        cellophane_print_log(ws_handler,LOG_ERROR,DEBUG_NONE,"ERROR opening socket");
         ws_handler->fd_alive = 0;
         exit(1);
     }
@@ -160,7 +217,7 @@ int cellophane_connect(WsHandler * ws_handler) {
     server = gethostbyname(ws_handler->serverHost);
 
     if (server == NULL) {
-        fprintf(stderr,"ERROR, no such host\n");
+        cellophane_print_log(ws_handler,LOG_ERROR,DEBUG_NONE,"ERROR, no such host");
         ws_handler->fd_alive = 0;
         exit(0);
     }
@@ -174,7 +231,7 @@ int cellophane_connect(WsHandler * ws_handler) {
 
     if (connect(ws_handler->fd,(const struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0)
     {
-         perror("ERROR connecting");
+         cellophane_print_log(ws_handler,LOG_ERROR,DEBUG_NONE,"ERROR connecting");
          ws_handler->fd_alive = 0;
          exit(1);
     }
@@ -196,7 +253,7 @@ int cellophane_connect(WsHandler * ws_handler) {
     //printf("sending data line 196\n");
     if (n < 0)
     {
-         perror("ERROR writing to socket");
+         cellophane_print_log(ws_handler,LOG_ERROR,DEBUG_NONE,"ERROR writing to socket");
          ws_handler->fd_alive = 0;
          exit(1);
     }
@@ -205,7 +262,7 @@ int cellophane_connect(WsHandler * ws_handler) {
     n = recv(ws_handler->fd,buff,255, 0);
     if (n < 0)
     {
-         perror("ERROR reading from socket");
+         cellophane_print_log(ws_handler,LOG_ERROR,DEBUG_NONE,"ERROR reading from socket");
          ws_handler->fd_alive = 0;
          exit(1);
     }
@@ -216,7 +273,8 @@ int cellophane_connect(WsHandler * ws_handler) {
 
 
     if(strncmp (ws_handler->buffer,"HTTP/1.1 101",12) != 0){
-        perror("Unexpected Response. Expected HTTP/1.1 101..\nAborting...");
+        cellophane_print_log(ws_handler,LOG_ERROR,DEBUG_NONE,"Unexpected Response. Expected HTTP/1.1 101..");
+        cellophane_print_log(ws_handler,LOG_ERROR,DEBUG_NONE,"Aborting...");
         ws_handler->fd_alive = 0;
         exit(1);
     }
@@ -250,11 +308,12 @@ int cellophane_connect(WsHandler * ws_handler) {
     }
 
     if(strncmp (m_payload,"1::",3) != 0){
-        perror("Socket.io did not send connect response. Aborting...");
+        cellophane_print_log(ws_handler,LOG_ERROR,DEBUG_NONE,"Socket.io did not send connect response.");
+        cellophane_print_log(ws_handler,LOG_ERROR,DEBUG_NONE,"Aborting...");
         ws_handler->fd_alive = 0;
         exit(1);
     }else{
-        printf("Conection stablished...\n",m_payload);
+        cellophane_print_log(ws_handler,LOG_INFO,DEBUG_MINIMAL,"Conection stablished...");
     }
 
 
@@ -304,7 +363,7 @@ char ** cellophane_read(WsHandler * ws_handler, int * message_num) {
         n = recv(ws_handler->fd,buff,1, 0);
         if (n < 0)
         {
-             perror("ERROR reading from socket");
+             cellophane_print_log(ws_handler,LOG_ERROR,DEBUG_NONE,"ERROR reading from socket");
              exit(1);
         }
 
@@ -312,7 +371,7 @@ char ** cellophane_read(WsHandler * ws_handler, int * message_num) {
         n = recv(ws_handler->fd,buff,255, 0);
         if (n < 0)
         {
-             perror("ERROR reading from socket");
+             cellophane_print_log(ws_handler,LOG_ERROR,DEBUG_NONE,"ERROR reading from socket");
              exit(1);
         }
 
@@ -327,7 +386,7 @@ char ** cellophane_read(WsHandler * ws_handler, int * message_num) {
             n = n + recv(ws_handler->fd,buff,255, 0);
             if (n < 0)
             {
-             perror("ERROR reading from socket");
+             cellophane_print_log(ws_handler,LOG_ERROR,DEBUG_NONE,"ERROR reading from socket");
              break;
             }
             ws_handler->buffer = (char*)realloc(ws_handler->buffer,(strlen(ws_handler->buffer) + strlen(buff)));
@@ -366,7 +425,7 @@ char ** cellophane_read(WsHandler * ws_handler, int * message_num) {
 
                 if((n-buffer_pointer)< payload_len){
 
-                    printf("Not enougth data..\n");
+                    cellophane_print_log(ws_handler,LOG_WARNING,DEBUG_DIAGNOSTIC,"Not enougth data..");
                 }
 
                 //printf("Payload len: %d - %d\n",payload_len,n);
@@ -420,13 +479,14 @@ char ** cellophane_read(WsHandler * ws_handler, int * message_num) {
 
 
         int n = send(ws_handler->fd,enc_payload, m_payload.enc_payload_size, 0);
-        //printf("sending data line 423\n");
+        cellophane_print_log(ws_handler,LOG_INFO,DEBUG_DETAILED,"Sending data line: sent %d should be sent %d",n, m_payload.enc_payload_size);
         if (n < 0)
         {
-            perror("ERROR writing to socket");
+            cellophane_print_log(ws_handler,LOG_ERROR,DEBUG_NONE,"ERROR writing to socket");
             exit(1);
         }
-        printf("Sent    > %s\n",raw_message);
+
+        cellophane_print_log(ws_handler,LOG_INFO,DEBUG_DIAGNOSTIC,"Sent    > %s (%d)",raw_message, strlen(raw_message));
         usleep(100*1000);
 }
 
@@ -447,19 +507,25 @@ void cellophane_event_handler(WsHandler * ws_handler){
 
 
     char ** data = cellophane_read(ws_handler, NULL);
-
+    int i = 0;
     if (data)
     {
-        int i;
+
         for (i = 0; *(data + i); i++)
         {
-            printf("Received> %s\n",*(data + i));
+            cellophane_print_log(ws_handler,LOG_INFO,DEBUG_DIAGNOSTIC,"Received> %s",*(data + i));
 
             if( strncmp(ws_handler->events[4].event_name,"default",7) == 0){
                 ws_handler->events[4].callback_func(*(data + i));
             }
         }
-    }else{
+        cellophane_print_log(ws_handler,LOG_INFO,DEBUG_DIAGNOSTIC,"Received %d Messages",i);
+    }
+
+    if(!i)
+    {
+
+        cellophane_print_log(ws_handler,LOG_WARNING,DEBUG_DETAILED,"No data received....");
 
         cellophane_reconect(ws_handler);
         if(ws_handler->fd_alive){
@@ -494,7 +560,7 @@ void  cellophane_close(WsHandler * ws_handler)
 
 void cellophane_reconect(WsHandler * ws_handler){
 
-    printf("Reconecting....\n");
+    cellophane_print_log(ws_handler,LOG_WARNING,DEBUG_DETAILED,"Reconecting....");
     cellophane_close(ws_handler);
     cellophane_connect(ws_handler);
 
@@ -506,15 +572,32 @@ void cellophane_keepAlive(WsHandler * ws_handler) {
     fd_set writefds;
     fd_set exceptfds;
 
+    char spinner[] = "|/-\\";
+    char spinner2[] = "+x";
+    int spinner_index= 0;
+    int spinner2_index= 0;
 
     while(ws_handler->fd_alive){
+        if (spinner2_index==2){
+                spinner2_index=0;
+        }
+
+        cellophane_print_log(ws_handler,LOG_FREE,DEBUG_DETAILED,"%c\b", spinner2[spinner2_index]);
+        fflush( stdout );
         usleep(100*1000);
+        spinner2_index++;
         while(!cellophane_read_ready(ws_handler)){
             if (ws_handler->session.heartbeat_timeout > 0 && ws_handler->session.heartbeat_timeout+ws_handler->heartbeatStamp-5 < time(NULL)) {
                 cellophane_send(ws_handler, TYPE_HEARTBEAT, "", "","");
                 ws_handler->heartbeatStamp = time(NULL);
             }
+            if (spinner_index==4){
+                spinner_index=0;
+            }
+            cellophane_print_log(ws_handler,LOG_FREE,DEBUG_DETAILED,"%c\b", spinner[spinner_index]);
+            fflush( stdout );
             usleep(100*1000);
+            spinner_index++;
         }
         cellophane_event_handler(ws_handler);
     }

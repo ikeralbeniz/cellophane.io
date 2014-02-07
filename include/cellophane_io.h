@@ -9,7 +9,29 @@
 
 #include "payload.h";
 
+#define ERRCOL "\x1B[31m"
+#define WARCOL "\x1B[33m"
+#define INFCOL "\x1B[36m"
+#define FRECOL "\x1B[132m"
+#define CLRCOL "\x1B[0m"
+
 typedef void (*on_event_callback)(char *);
+
+
+enum cellophane_debug_level{
+    DEBUG_NONE = 0,
+    DEBUG_MINIMAL = 1,
+    DEBUG_NORMAL = 2,
+    DEBUG_DIAGNOSTIC = 3,
+    DEBUG_DETAILED = 4
+};
+
+enum cellophane_log_type{
+    LOG_INFO,
+    LOG_ERROR,
+    LOG_WARNING,
+    LOG_FREE
+};
 
 enum socket_io_type{
 
@@ -58,9 +80,10 @@ typedef struct _wshandler{
     int lastId;
     int read;
     int checkSslPeer;
-    int debug;
     int handshakeTimeout;
     time_t heartbeatStamp;
+
+    enum cellophane_debug_level debug_level;
 
     WsEvent events[5];
 
@@ -68,7 +91,8 @@ typedef struct _wshandler{
 
 typedef wshandler_type WsHandler;
 
-extern void cellophane_new(WsHandler * ws_handler, char * tcp_protocol , char * address, int port, char * path, int protocol, int read, int  checkSslPeer, int debug);
+extern void cellophane_new(WsHandler * ws_handler, char * tcp_protocol , char * address, int port, char * path, int protocol, int read, int  checkSslPeer, enum cellophane_debug_level  debug);
+extern void cellophane_set_debug(WsHandler * ws_handler, enum cellophane_debug_level debug);
 extern void cellophane_io(WsHandler * ws_handler, char * tcp_protocol, char * address, int port );
 extern void cellophane_init(WsHandler * ws_handler, int keepalive);
 extern int cellophane_handshake(WsHandler * ws_handler);

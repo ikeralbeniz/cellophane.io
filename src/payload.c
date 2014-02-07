@@ -216,15 +216,14 @@ unsigned char * payload_encodePayload(Payload * payload)
             payload_maskData(payload, data);
             memcpy(&auxpayload[aux_unit_len], payload_getMaskKey(payload), 4);
             memcpy(&auxpayload[aux_unit_len+4], data, strlen(data));
-            size = aux_unit_len + 4 + strlen(data);
+            size = aux_unit_len + 4 + payload_getLength(payload);
 
         } else {
             //data = payload_getPayload(payload);
             //memcpy(auxpayload, aux_unit, 2);
             memcpy(&auxpayload[aux_unit_len], (const char * )payload->payload, strlen((const char * )payload->payload));
-            size = aux_unit_len + strlen((const char * )payload->payload);
+            size = aux_unit_len + payload_getLength(payload);
         }
-
 
     payload->enc_payload_size = size;
     char * encoded_payload = malloc(size);
