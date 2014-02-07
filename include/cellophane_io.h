@@ -15,8 +15,17 @@
 #define FRECOL "\x1B[132m"
 #define CLRCOL "\x1B[0m"
 
-typedef void (*on_event_callback)(char *);
 
+typedef struct _wsevent_info{
+    void * ws_handler;
+    char * event_name;
+    char * message;
+    void * data;
+}wsevent_info_type;
+
+typedef wsevent_info_type WsEventInfo;
+
+typedef void (*on_event_callback)(WsEventInfo info);
 
 enum cellophane_debug_level{
     DEBUG_NONE = 0,
@@ -55,6 +64,7 @@ typedef struct _wsevent{
 
 typedef wsevent_type WsEvent;
 
+
 typedef struct _wssession{
 
     char * sid;
@@ -85,6 +95,7 @@ typedef struct _wshandler{
 
     enum cellophane_debug_level debug_level;
 
+    WsEvent default_events[10];
     WsEvent events[5];
 
 } wshandler_type;
@@ -94,6 +105,7 @@ typedef wshandler_type WsHandler;
 extern void cellophane_new(WsHandler * ws_handler, char * tcp_protocol , char * address, int port, char * path, int protocol, int read, int  checkSslPeer, enum cellophane_debug_level  debug);
 extern void cellophane_set_debug(WsHandler * ws_handler, enum cellophane_debug_level debug);
 extern void cellophane_io(WsHandler * ws_handler, char * tcp_protocol, char * address, int port );
+extern void cellophane_io_connect(WsHandler * ws_handler);
 extern void cellophane_init(WsHandler * ws_handler, int keepalive);
 extern int cellophane_handshake(WsHandler * ws_handler);
 extern int cellophane_connect(WsHandler * ws_handler);
@@ -104,7 +116,7 @@ extern void  cellophane_emit(WsHandler * ws_handler, char * event, char * args, 
 extern void  cellophane_close(WsHandler * ws_handler);
 extern void cellophane_keepAlive(WsHandler * ws_handler);
 extern void cellophane_event_handler(WsHandler * ws_handler);
-extern void cellophane_on(WsHandler * ws_handler, void (*on_event_callback)(char *));
+extern void cellophane_on(WsHandler * ws_handler, char * event_name, void (*on_event_callback)(WsEventInfo));
 
 
 #endif //_CELLOPHANE_IO_H_

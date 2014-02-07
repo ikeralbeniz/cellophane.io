@@ -40,6 +40,9 @@
 int Base64encode_len(int len);
 int Base64encode(char *encoded, const char *string, int len);
 int cellophane_read_ready(WsHandler * ws_handler);
+void cellophane_print_log(WsHandler * ws_handler, enum cellophane_log_type logtype, enum cellophane_debug_level level,  char * format ,...);
+void cellophane_reset_default_events(WsHandler * ws_handler);
+void cellophane_trigger_default_events(WsHandler * ws_handler, WsEventInfo info);
 void cellophane_reconect(WsHandler * ws_handler);
 void cellophane_compute_md5(char *str, unsigned char digest[16]);
 int cellophane_number_of_message(char * buffer, int n);
@@ -62,9 +65,16 @@ int findn(int num)
 void cellophane_io(WsHandler * ws_handler, char * tcp_protocol, char * address, int port ){
 
     cellophane_new(ws_handler, tcp_protocol, address, port, "socket.io", 1, 0, 1, 0);
+
+}
+
+
+void cellophane_io_connect(WsHandler * ws_handler){
+
     cellophane_init(ws_handler, 0);
 
 }
+
 
 void cellophane_new(WsHandler * ws_handler, char * tcp_protocol , char * address, int port, char * path, int protocol, int read, int  checkSslPeer, enum cellophane_debug_level debug){
 
@@ -86,6 +96,40 @@ void cellophane_new(WsHandler * ws_handler, char * tcp_protocol , char * address
         ws_handler->debug_level = debug;
     }
 
+    cellophane_reset_default_events(ws_handler);
+
+}
+
+void cellophane_reset_default_events(WsHandler * ws_handler){
+
+    char * event_names[] = {"anything","connect","connecting","disconnect","connect_failed","error","message","reconnect_failed","reconnect","reconnecting"};
+
+    int i;
+    for(i=0; i < 10; i++){
+        ws_handler->default_events[i].event_name = event_names[i];
+        ws_handler->default_events[i].callback_func = NULL;
+    }
+
+}
+
+
+void cellophane_trigger_default_events(WsHandler * ws_handler,  WsEventInfo info){
+
+    int i;
+    info.ws_handler= (void *) ws_handler;
+    for(i=1; i < 10; i++){
+       if( (strncmp(ws_handler->default_events[i].event_name,info.event_name,strlen(info.event_name)) == 0)
+           && (strlen(info.event_name) == strlen(ws_handler->default_events[i].event_name))
+           && ws_handler->default_events[i].callback_func != NULL){
+                cellophane_print_log(ws_handler,LOG_INFO,DEBUG_DIAGNOSTIC,"Triggered \"%s\" default event", info.event_name);
+                ws_handler->default_events[i].callback_func(info);
+        }
+    }
+
+    if( ws_handler->default_events[0].callback_func != NULL){
+        cellophane_print_log(ws_handler,LOG_INFO,DEBUG_DIAGNOSTIC,"Triggered \"anything\" default event");
+        ws_handler->default_events[0].callback_func(info);
+    }
 }
 
 void cellophane_set_debug(WsHandler * ws_handler, enum cellophane_debug_level debug){
@@ -203,6 +247,10 @@ int cellophane_connect(WsHandler * ws_handler) {
     struct hostent *server;
     char buff[256];
 
+    WsEventInfo info;
+    info.event_name = "connecting";
+    info.message = "Connecting";
+    cellophane_trigger_default_events(ws_handler, info);
 
     portno = ws_handler->serverPort;
 
@@ -319,6 +367,11 @@ int cellophane_connect(WsHandler * ws_handler) {
 
 
     ws_handler->heartbeatStamp = time(NULL);
+
+    WsEventInfo info_f;
+    info_f.event_name = "connect";
+    info_f.message = "connect";
+    cellophane_trigger_default_events(ws_handler, info_f);
 
     //free(m_payload_a);
     //free(m_payload);
@@ -497,10 +550,16 @@ void  cellophane_emit(WsHandler * ws_handler, char * event, char * args, char * 
         cellophane_send(ws_handler,TYPE_EVENT, "", endpoint, message);
 }
 
-void cellophane_on(WsHandler * ws_handler, void (*on_event_callback)(char *))
+void cellophane_on(WsHandler * ws_handler, char * event_name, void (*on_event_callback)(WsEventInfo))
 {
-    ws_handler->events[4].event_name = "default";
-    ws_handler->events[4].callback_func = on_event_callback;
+
+    int i;
+    for(i=0; i < 10; i++){
+        if( (strncmp(ws_handler->default_events[i].event_name,event_name,strlen(event_name)) == 0)
+           && (strlen(event_name) == strlen(ws_handler->default_events[i].event_name))){
+                ws_handler->default_events[i].callback_func = on_event_callback;
+        }
+    }
 }
 
 void cellophane_event_handler(WsHandler * ws_handler){
@@ -511,15 +570,28 @@ void cellophane_event_handler(WsHandler * ws_handler){
     if (data)
     {
 
+
         for (i = 0; *(data + i); i++)
         {
             cellophane_print_log(ws_handler,LOG_INFO,DEBUG_DIAGNOSTIC,"Received> %s",*(data + i));
 
+            WsEventInfo info_rsponse;
+            info_rsponse.event_name = "message";
+            info_rsponse.message = *(data + i);
+
+            cellophane_trigger_default_events(ws_handler, info_rsponse);
+
             if( strncmp(ws_handler->events[4].event_name,"default",7) == 0){
-                ws_handler->events[4].callback_func(*(data + i));
+
+
+                ws_handler->events[4].callback_func(info_rsponse);
+
             }
+
+
         }
         cellophane_print_log(ws_handler,LOG_INFO,DEBUG_DIAGNOSTIC,"Received %d Messages",i);
+
     }
 
     if(!i)
@@ -529,6 +601,10 @@ void cellophane_event_handler(WsHandler * ws_handler){
 
         cellophane_reconect(ws_handler);
         if(ws_handler->fd_alive){
+            WsEventInfo info;
+            info.event_name = "reconnect_failed";
+            info.message = "Reconnect Failed";
+            cellophane_trigger_default_events(ws_handler, info);
             exit(1);
         }
 
@@ -555,14 +631,30 @@ void  cellophane_close(WsHandler * ws_handler)
         cellophane_send(ws_handler, TYPE_DISCONNECT, "", "","");
         //printf("sending data line 489\n");
         close(ws_handler->fd);
+
+        WsEventInfo info;
+        info.event_name = "disconnect";
+        info.message = "Disconnecting";
+        cellophane_trigger_default_events(ws_handler, info);
 }
 
 
 void cellophane_reconect(WsHandler * ws_handler){
 
     cellophane_print_log(ws_handler,LOG_WARNING,DEBUG_DETAILED,"Reconecting....");
+
+    WsEventInfo info;
+    info.event_name = "reconnecting";
+    info.message = "Reconnecting";
+    cellophane_trigger_default_events(ws_handler, info);
+
     cellophane_close(ws_handler);
     cellophane_connect(ws_handler);
+
+    WsEventInfo info_r;
+    info_r.event_name = "reconnect";
+    info_r.message = "Reconnect";
+    cellophane_trigger_default_events(ws_handler, info_r);
 
 }
 
