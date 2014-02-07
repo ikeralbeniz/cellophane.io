@@ -7,9 +7,11 @@
 #include <stdlib.h>
 #include <cellophaneio/cellophane_io.h>
 
-void on_notofication_callback(char * data){
+void on_notofication_callback(WsEventInfo info){
 
-    printf("Notification: %s\n", data);
+    WsHandler * parent_client = (WsHandler *) info.ws_handler;
+    printf("Notification: %s\n", info.message);
+
 }
 
 int main()
@@ -17,9 +19,15 @@ int main()
 
     WsHandler io_client;
     cellophane_io(&io_client,"http://", "localhost", 8000);
+
+    cellophane_set_debug(&io_client, DEBUG_DETAILED);
+    cellophane_on(&io_client, "anything", on_notofication_callback);
+
+    cellophane_io_connect(&io_client);
     cellophane_emit(&io_client,"login", "foo","");
-    cellophane_on(&io_client, on_notofication_callback);
     cellophane_keepAlive(&io_client);
+
     cellophane_close(&io_client);
     return 0;
+
 }
