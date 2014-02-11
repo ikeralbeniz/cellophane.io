@@ -1,6 +1,6 @@
 SHELL = /bin/sh
 CC    = g++
-CFLAGS  = -fpermissive -fPIC -shared -Wall -Iinclude -Isrc -lcurl
+CFLAGS  = -fpermissive -fPIC -shared -Wall -Iinclude -Isrc -lcurl -ljson
 
 TARGET  = cellophane.io.so
 SOURCES = $(shell echo src/*.c)
