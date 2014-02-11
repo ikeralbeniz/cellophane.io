@@ -55,6 +55,13 @@ enum socket_io_type{
     TYPE_NOOP         = 8,
 };
 
+typedef struct _wsmessage{
+    enum socket_io_type type;
+    char * raw_message;
+
+}wsmessage_type;
+
+typedef wsmessage_type WsMessage;
 
 typedef struct _wsevent{
     char * event_name;

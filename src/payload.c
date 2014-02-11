@@ -126,13 +126,13 @@ unsigned char *  payload_getPayload(Payload * payload) {
 void payload_generateMaskKey(Payload * payload){
 
     srand(time(NULL));
-    payload->maskKey[0] = (char)rand() % 255;
+    payload->maskKey[0] = (char)rand() % 126;
     srand(time(NULL)+payload->maskKey[0]);
-    payload->maskKey[1] = (char)rand() % 255;
+    payload->maskKey[1] = (char)rand() % 126;
     srand(time(NULL)+payload->maskKey[0]+payload->maskKey[1]);
-    payload->maskKey[2] = (char)rand() % 255;
+    payload->maskKey[2] = (char)rand() % 126;
     srand(time(NULL)+payload->maskKey[0]+payload->maskKey[1]+payload->maskKey[2]);
-    payload->maskKey[3] = (char)rand() % 255;
+    payload->maskKey[3] = (char)rand() % 126;
 }
 
 void payload_maskData(Payload * payload, char * masked) {
@@ -163,7 +163,8 @@ unsigned char * payload_encodePayload(Payload * payload)
 
 
         int aux_unit_len = 0;
-        char auxpayload[4086];
+        char auxpayload[4096];
+        bzero(auxpayload,4096);
 
         if (payload_getLength(payload) <= 125) {
 

@@ -31,6 +31,7 @@
 #include <curl/easy.h>
 #include <string.h>
 #include <unistd.h>
+#include <json/json.h>
 
 #include "cellophane_io.h"
 #include "md5.h"
@@ -518,10 +519,12 @@ char ** cellophane_read(WsHandler * ws_handler, int * message_num) {
         char * raw_message;
         if(io_type == TYPE_EVENT || io_type == TYPE_MESSAGE || io_type == TYPE_JSON_MESSAGE ){
             raw_message = malloc(4 + (int)(strlen(id)+strlen(endpoint)+strlen(message)));
+            bzero(raw_message, 4 + (int)(strlen(id)+strlen(endpoint)+strlen(message)));
             sprintf(raw_message,"%d:%s:%s:%s", io_type, id, endpoint, message);
 
         }else{
             raw_message = malloc(3 + (int)(strlen(id)+strlen(endpoint)));
+            bzero(raw_message, 3 + (int)(strlen(id)+strlen(endpoint)));
             sprintf(raw_message,"%d:%s:%s", io_type, id, endpoint);
         }
 
@@ -545,9 +548,11 @@ char ** cellophane_read(WsHandler * ws_handler, int * message_num) {
 
 void  cellophane_emit(WsHandler * ws_handler, char * event, char * args, char * endpoint){//, $callback = null) {
 
-        char * message = malloc(21 + (int)(strlen(event)+strlen(args)));
-        sprintf(message,"{\"name\":\"%s\",\"args\":\"%s\"}", event, args);
-        cellophane_send(ws_handler,TYPE_EVENT, "", endpoint, message);
+        int malloc_len = (22 + (int)(strlen(event)+strlen(args))) * sizeof(char);
+        char * emit_message = (char*) malloc(malloc_len);
+        bzero(emit_message,malloc_len);
+        snprintf(emit_message, malloc_len,"{\"name\":\"%s\",\"args\":\"%s\"}", event, args);
+        cellophane_send(ws_handler,TYPE_EVENT, "", endpoint, emit_message);
 }
 
 void cellophane_on(WsHandler * ws_handler, char * event_name, void (*on_event_callback)(WsEventInfo))
@@ -562,6 +567,69 @@ void cellophane_on(WsHandler * ws_handler, char * event_name, void (*on_event_ca
     }
 }
 
+void cellophane_io_message_parse(char * raw_string, WsMessage * message){
+
+    if(strncmp(raw_string,"0::",3) == 0){
+        message->type = TYPE_DISCONNECT;
+        message->raw_message = NULL;
+
+    }else if(strncmp(raw_string,"1::",3) == 0){
+        message->type = TYPE_CONNECT;
+        message->raw_message = NULL;
+
+    }else if(strncmp(raw_string,"2::",3) == 0){
+        message->type = TYPE_HEARTBEAT;
+        message->raw_message = NULL;
+
+    }else if(strncmp(raw_string,"3::",3) == 0){
+        message->type = TYPE_MESSAGE;
+        message->raw_message = raw_string+4;
+
+    }else if(strncmp(raw_string,"4::",3) == 0){
+        message->type = TYPE_JSON_MESSAGE;
+        message->raw_message = raw_string+4;
+
+    }else if(strncmp(raw_string,"5::",3) == 0){
+        message->type = TYPE_EVENT;
+        message->raw_message = raw_string+4;
+
+    }else if(strncmp(raw_string,"6::",3) == 0){
+        message->type = TYPE_ACK;
+        message->raw_message = NULL;
+
+    }else if(strncmp(raw_string,"7::",3) == 0){
+        message->type = TYPE_ERROR;
+        message->raw_message = NULL;
+
+    }else if(strncmp(raw_string,"8::",3) == 0){
+        message->type = TYPE_NOOP;
+        message->raw_message = NULL;
+
+    }
+
+}
+
+void cellophane_io_json_response_parse(char * json_string, WsEventInfo * info_rsponse){
+
+    json_object * jobj = json_tokener_parse(json_string);
+
+
+    char *key; struct json_object *val;
+    struct lh_entry *entry;
+
+    for(entry = json_object_get_object(jobj)->head; ({ if(entry) { key = (char*)entry->k; val = (struct json_object*)entry->v; } ; entry; }); entry = entry->next ){
+
+        if(strncmp(key,"name",4) == 0){
+            info_rsponse->event_name = json_object_get_string(val);
+        }
+
+       if(strncmp(key,"args",4) == 0){
+            info_rsponse->message = json_object_get_string(val);
+        }
+    }
+
+}
+
 void cellophane_event_handler(WsHandler * ws_handler){
 
 
@@ -570,21 +638,27 @@ void cellophane_event_handler(WsHandler * ws_handler){
     if (data)
     {
 
-
         for (i = 0; *(data + i); i++)
         {
             cellophane_print_log(ws_handler,LOG_INFO,DEBUG_DIAGNOSTIC,"Received> %s",*(data + i));
+            WsMessage ws_message;
+            cellophane_io_message_parse(*(data + i), &ws_message);
 
-            WsEventInfo info_rsponse;
-            info_rsponse.event_name = "message";
-            info_rsponse.message = *(data + i);
+            if(ws_message.type == TYPE_EVENT || ws_message.type == TYPE_JSON_MESSAGE || ws_message.type == TYPE_MESSAGE){
 
-            cellophane_trigger_default_events(ws_handler, info_rsponse);
+                WsEventInfo info_rsponse;
+                cellophane_io_json_response_parse(ws_message.raw_message, &info_rsponse);
+                cellophane_print_log(ws_handler,LOG_INFO,DEBUG_DIAGNOSTIC,"Received data on message> data: %s , args: %s",info_rsponse.event_name, info_rsponse.message);
 
-            if( strncmp(ws_handler->events[4].event_name,"default",7) == 0){
+                cellophane_trigger_default_events(ws_handler, info_rsponse);
+
+                if( strncmp(ws_handler->events[4].event_name,"default",7) == 0){
 
 
-                ws_handler->events[4].callback_func(info_rsponse);
+                    ws_handler->events[4].callback_func(info_rsponse);
+
+                }
+            }else{
 
             }
 
@@ -649,7 +723,8 @@ void cellophane_reconect(WsHandler * ws_handler){
     cellophane_trigger_default_events(ws_handler, info);
 
     cellophane_close(ws_handler);
-    cellophane_connect(ws_handler);
+    //cellophane_connect(ws_handler);
+    cellophane_init(ws_handler,0);
 
     WsEventInfo info_r;
     info_r.event_name = "reconnect";
