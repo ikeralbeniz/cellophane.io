@@ -66,7 +66,6 @@ typedef wsmessage_type WsMessage;
 typedef struct _wsevent{
     char * event_name;
     on_event_callback callback_func;
-
 }wsevent_type;
 
 typedef wsevent_type WsEvent;
@@ -93,6 +92,7 @@ typedef struct _wshandler{
     WsSession session;
     int fd;
     int fd_alive;
+    int keep_alive_flag;
     char * buffer;
     int lastId;
     int read;
@@ -103,7 +103,8 @@ typedef struct _wshandler{
     enum cellophane_debug_level debug_level;
 
     WsEvent default_events[10];
-    WsEvent events[5];
+    WsEvent events[100];
+    int user_events_len;
 
 } wshandler_type;
 
@@ -118,7 +119,7 @@ extern int cellophane_handshake(WsHandler * ws_handler);
 extern int cellophane_connect(WsHandler * ws_handler);
 extern char * cellophane_generateKey(int length);
 extern char ** cellophane_read(WsHandler * ws_handler, int * msg_number);
-extern void cellophane_send(WsHandler * ws_handler, enum socket_io_type io_type, char * id, char * endpoint, char * message);
+extern void cellophane_send(WsHandler * ws_handler, enum socket_io_type io_type, char * id, char * endpoint, char * message, int easy);
 extern void  cellophane_emit(WsHandler * ws_handler, char * event, char * args, char * endpoint);
 extern void  cellophane_close(WsHandler * ws_handler);
 extern void cellophane_keepAlive(WsHandler * ws_handler);

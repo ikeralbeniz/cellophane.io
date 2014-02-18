@@ -72,7 +72,7 @@ void cellophane_io(WsHandler * ws_handler, char * tcp_protocol, char * address, 
 
 void cellophane_io_connect(WsHandler * ws_handler){
 
-    cellophane_init(ws_handler, 0);
+    cellophane_init(ws_handler, ws_handler->keep_alive_flag);
 
 }
 
@@ -91,11 +91,14 @@ void cellophane_new(WsHandler * ws_handler, char * tcp_protocol , char * address
     ws_handler->checkSslPeer = checkSslPeer;
 
     ws_handler->lastId = 0;
+    ws_handler->keep_alive_flag = 0;
     ws_handler->checkSslPeer = 1;
     ws_handler->handshakeTimeout = NULL;
     if(ws_handler->debug_level == NULL){
         ws_handler->debug_level = debug;
     }
+
+    ws_handler->user_events_len = 0;
 
     cellophane_reset_default_events(ws_handler);
 
@@ -363,6 +366,7 @@ int cellophane_connect(WsHandler * ws_handler) {
         exit(1);
     }else{
         cellophane_print_log(ws_handler,LOG_INFO,DEBUG_MINIMAL,"Conection stablished...");
+        ws_handler->fd_alive = 1;
     }
 
 
@@ -510,7 +514,7 @@ char ** cellophane_read(WsHandler * ws_handler, int * message_num) {
 }
 
 
- void cellophane_send(WsHandler * ws_handler, enum socket_io_type io_type, char * id, char * endpoint, char * message) {
+ void cellophane_send(WsHandler * ws_handler, enum socket_io_type io_type, char * id, char * endpoint, char * message,  int easy) {
 
         Payload m_payload;
         payload_init(&m_payload);
@@ -518,14 +522,26 @@ char ** cellophane_read(WsHandler * ws_handler, int * message_num) {
 
         char * raw_message;
         if(io_type == TYPE_EVENT || io_type == TYPE_MESSAGE || io_type == TYPE_JSON_MESSAGE ){
-            raw_message = malloc(4 + (int)(strlen(id)+strlen(endpoint)+strlen(message)));
-            bzero(raw_message, 4 + (int)(strlen(id)+strlen(endpoint)+strlen(message)));
-            sprintf(raw_message,"%d:%s:%s:%s", io_type, id, endpoint, message);
+            if(!easy){
+                raw_message = malloc(4 + (int)(strlen(id)+strlen(endpoint)+strlen(message)));
+                bzero(raw_message, 4 + (int)(strlen(id)+strlen(endpoint)+strlen(message)));
+                sprintf(raw_message,"%d:%s:%s:%s", io_type, id, endpoint, message);
+            }else{
+                raw_message = malloc(4 + (int)strlen(message));
+                bzero(raw_message, 4 + (int)strlen(message));
+                sprintf(raw_message,"%d:::%s", io_type, message);
+            }
 
         }else{
-            raw_message = malloc(3 + (int)(strlen(id)+strlen(endpoint)));
-            bzero(raw_message, 3 + (int)(strlen(id)+strlen(endpoint)));
-            sprintf(raw_message,"%d:%s:%s", io_type, id, endpoint);
+            if(!easy){
+                raw_message = malloc(3 + (int)(strlen(id)+strlen(endpoint)));
+                bzero(raw_message, 3 + (int)(strlen(id)+strlen(endpoint)));
+                sprintf(raw_message,"%d:%s:%s", io_type, id, endpoint);
+            }else{
+                raw_message = malloc(3);
+                bzero(raw_message, 3);
+                sprintf(raw_message,"%d::", io_type);
+            }
         }
 
         payload_setPayload(&m_payload,(unsigned char *)raw_message);
@@ -552,19 +568,34 @@ void  cellophane_emit(WsHandler * ws_handler, char * event, char * args, char * 
         char * emit_message = (char*) malloc(malloc_len);
         bzero(emit_message,malloc_len);
         snprintf(emit_message, malloc_len,"{\"name\":\"%s\",\"args\":\"%s\"}", event, args);
-        cellophane_send(ws_handler,TYPE_EVENT, "", endpoint, emit_message);
+        cellophane_send(ws_handler,TYPE_EVENT, "", endpoint, emit_message, 1);
 }
 
 void cellophane_on(WsHandler * ws_handler, char * event_name, void (*on_event_callback)(WsEventInfo))
 {
-
     int i;
+
     for(i=0; i < 10; i++){
-        if( (strncmp(ws_handler->default_events[i].event_name,event_name,strlen(event_name)) == 0)
-           && (strlen(event_name) == strlen(ws_handler->default_events[i].event_name))){
+        if(strcmp(ws_handler->default_events[i].event_name,event_name) == 0){
                 ws_handler->default_events[i].callback_func = on_event_callback;
+                return;
         }
     }
+
+    for(i=0; i < ws_handler->user_events_len; i++){
+        if(strcmp(ws_handler->events[i].event_name,event_name) == 0){
+                ws_handler->events[i].callback_func = on_event_callback;
+                return;
+        }
+    }
+    if (ws_handler->user_events_len == 100){
+        cellophane_print_log(ws_handler,LOG_WARNING,DEBUG_NORMAL,"User event limit (100) exceded, imposible to add");
+        return;
+    }
+    ws_handler->events[ws_handler->user_events_len].event_name = (char *) malloc(strlen(event_name));
+    memcpy(ws_handler->events[ws_handler->user_events_len].event_name,event_name,strlen(event_name));
+    ws_handler->events[ws_handler->user_events_len].callback_func = on_event_callback;
+    ws_handler->user_events_len++;
 }
 
 void cellophane_io_message_parse(char * raw_string, WsMessage * message){
@@ -652,12 +683,13 @@ void cellophane_event_handler(WsHandler * ws_handler){
 
                 cellophane_trigger_default_events(ws_handler, info_rsponse);
 
-                if( strncmp(ws_handler->events[4].event_name,"default",7) == 0){
-
-
-                    ws_handler->events[4].callback_func(info_rsponse);
-
+                int j;
+                for(j=0; j < ws_handler->user_events_len; j++){
+                    if(strcmp(ws_handler->events[j].event_name, info_rsponse.event_name) == 0){
+                            ws_handler->events[j].callback_func(info_rsponse);
+                    }
                 }
+
             }else{
 
             }
@@ -674,35 +706,20 @@ void cellophane_event_handler(WsHandler * ws_handler){
         cellophane_print_log(ws_handler,LOG_WARNING,DEBUG_DETAILED,"No data received....");
 
         cellophane_reconect(ws_handler);
-        if(ws_handler->fd_alive){
+        if(!ws_handler->fd_alive){
             WsEventInfo info;
             info.event_name = "reconnect_failed";
             info.message = "Reconnect Failed";
             cellophane_trigger_default_events(ws_handler, info);
-            exit(1);
         }
-
-        return;
 
     }
-
-    /*int i = 0;
-    for(i = 0; i < 128; i++){
-        if(ws_handler->events[i].event_name == "notification"){
-            printf("Calling function: %s\n", ws_handler->events[i].event_name);
-            break;
-            //(*ws_handler->events[i].callback_func)(data);
-            //ws_handler->events[i].callback_func(data);
-        }
-    }*/
-
-
 
 }
 
 void  cellophane_close(WsHandler * ws_handler)
 {
-        cellophane_send(ws_handler, TYPE_DISCONNECT, "", "","");
+        cellophane_send(ws_handler, TYPE_DISCONNECT, "", "","", 1);
         //printf("sending data line 489\n");
         close(ws_handler->fd);
 
@@ -739,6 +756,8 @@ void cellophane_keepAlive(WsHandler * ws_handler) {
     fd_set writefds;
     fd_set exceptfds;
 
+    ws_handler->keep_alive_flag = 1;
+
     char spinner[] = "|/-\\";
     char spinner2[] = "+x";
     int spinner_index= 0;
@@ -755,7 +774,7 @@ void cellophane_keepAlive(WsHandler * ws_handler) {
         spinner2_index++;
         while(!cellophane_read_ready(ws_handler)){
             if (ws_handler->session.heartbeat_timeout > 0 && ws_handler->session.heartbeat_timeout+ws_handler->heartbeatStamp-5 < time(NULL)) {
-                cellophane_send(ws_handler, TYPE_HEARTBEAT, "", "","");
+                cellophane_send(ws_handler, TYPE_HEARTBEAT, "", "","", 1);
                 ws_handler->heartbeatStamp = time(NULL);
             }
             if (spinner_index==4){
