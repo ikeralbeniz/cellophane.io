@@ -1,5 +1,5 @@
 SHELL = /bin/sh
-CC    = g++
+CC    = gcc
 CFLAGS  = -fpermissive -fPIC -shared -Wall -Iinclude -Isrc -lcurl -ljson
 
 TARGET  = cellophane.io.so
