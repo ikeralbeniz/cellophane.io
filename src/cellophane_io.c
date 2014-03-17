@@ -567,7 +567,7 @@ void  cellophane_emit(WsHandler * ws_handler, char * event, char * args, char * 
         int malloc_len = (22 + (int)(strlen(event)+strlen(args))) * sizeof(char);
         char * emit_message = (char*) malloc(malloc_len);
         bzero(emit_message,malloc_len);
-        snprintf(emit_message, malloc_len,"{\"name\":\"%s\",\"args\":\"%s\"}", event, args);
+        snprintf(emit_message, malloc_len,"{\"name\":\"%s\",\"args\":%s}", event, args);
         cellophane_send(ws_handler,TYPE_EVENT, "", endpoint, emit_message, 1);
 }
 
